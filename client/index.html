@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="src/style.css">
+    <title>Client</title>
+  </head>
+  <body>
+    <div id="app">
+      <label for="icegatheringstatechange">icegatheringstatechange</label>
+      <p id="icegatheringstatechange"></p>
+      <hr>
+
+      <label for="iceconnectionstatechange">iceconnectionstatechange</label>
+      <p id="iceconnectionstatechange"></p>
+      <hr>
+
+      <label for="signalingstatechange">signalingstatechange</label>
+      <p id="signalingstatechange"></p>
+      <hr>
+
+      <label for="status">Status</label>
+      <p id="status"></p>
+      <hr>
+      <button id="connect">Start</button>
+      
+      <label for="video">Video</label>
+      <video id="video" autoplay></video>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
