@@ -17,13 +17,10 @@ const socketDrone = client("http://localhost:3000", {
 const peerDrone = new RTCPeerConnection({
   iceServers: [
     {
-      urls: "stun:stun.l.google.com:19302",
-    },
-    // {
-    //   urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443'],
-    //   credential: 'openrelayproject',
-    //   username: 'openrelayproject'
-    // },
+      urls: "turn:0.0.0.0:3478",
+      username: "sanndy",
+      credential: "manndy"
+    }
   ]
 });
 
@@ -38,10 +35,11 @@ peerDrone.addEventListener("signalingstatechange", function () { signalingstatec
 
 socketDrone.on("START_STREAM", async (payload) => {
   status.textContent = "DRONE: got OFFER from SERVER";
-  // const localStream = await playVideoFromCamera();
-  // localStream.getTracks().forEach(track => {
-  //   peerDrone.addTrack(track, localStream);
-  // });
+  console.log(payload);
+  const localStream = await playVideoFromCamera();
+  localStream.getTracks().forEach(track => {
+    peerDrone.addTrack(track, localStream);
+  });
   const remoteOffer = new RTCSessionDescription(payload.offer);
   await peerDrone.setRemoteDescription(remoteOffer);
   const answer = await peerDrone.createAnswer();
@@ -53,6 +51,6 @@ socketDrone.on("START_STREAM", async (payload) => {
 async function playVideoFromCamera() {
   const constraints = { 'video': true, 'audio': true };
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
-  // video.srcObject = stream;
+  video.srcObject = stream;
   return stream;
 }
