@@ -1,6 +1,6 @@
 import client from "socket.io-client"
 
-const connectButton = document.querySelector<HTMLButtonElement>("#connect")!;
+const video = document.querySelector<HTMLVideoElement>("#video")!;
 
 const sc = client("http://localhost:3000", {
     query: {
@@ -41,12 +41,8 @@ sc.on("message", async ({ sdp, candidate }) => {
     } else if (candidate) await pc.addIceCandidate(candidate);
 })
 
-
-connectButton.onclick = async () => {
-    const datachannel = pc.createDataChannel("test", {
-        // ordered: true,
-        // negotiated: true,
-    })
-    datachannel.onopen = () => datachannel.onmessage = ({ data }) => console.log(datachannel.id, data);
-}
+pc.addEventListener("track", async (event) => {
+    const [remoteStream] = event.streams;
+    video.srcObject = remoteStream;
+});
 

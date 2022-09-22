@@ -1,9 +1,6 @@
-// import express, { Application } from "express";
-// import wrtc from "wrtc";
 import { Server, Socket } from "socket.io";
 import { createServer } from "http";
-import { RTCSessionDescriptionInit, RTCIceCandidateInit, RTCPeerConnection } from "wrtc";
-import { randomUUID } from "crypto";
+import { RTCPeerConnection } from "wrtc";
 
 type UIN = string;
 
@@ -21,7 +18,7 @@ type Query = {
     uin: UIN
 }
 
-let droneChannels = new Map<UIN, RTCDataChannel>();
+let droneChannels = new Map<UIN, readonly MediaStream[]>();
 
 const handleClient = (sc: Socket, uin: UIN) => {
     const pc = new RTCPeerConnection({
@@ -35,17 +32,11 @@ const handleClient = (sc: Socket, uin: UIN) => {
         iceCandidatePoolSize: 10
     });
 
-    pc.ondatachannel = ({ channel }) => {
-        channel.onopen = () => {
-            const droneChannel = droneChannels.get(uin);
-            if (droneChannel) {
-                droneChannel.addEventListener("message", ({ data }) => channel.send(data));
-                droneChannel.addEventListener("close", () => channel.close());
-            }
-        }
-    };
+    const droneChannel = droneChannels.get(uin);
 
-
+    if (droneChannel) {
+        droneChannel.forEach(track => track.getTracks().forEach(track => pc.addTrack(track, ...droneChannel)))
+    }
 
     pc.oniceconnectionstatechange = () => console.log("client", pc.iceConnectionState);
     pc.onicecandidate = ({ candidate }) => sc.emit("message", { candidate });
@@ -86,7 +77,9 @@ const handleDrone = (sc: Socket, uin: UIN) => {
         sc.emit("message", { sdp: pc.localDescription });
     }
 
-
+    pc.ontrack = ({streams}) => {
+        droneChannels.set(uin, streams);
+    }
 
     sc.on("message", async ({ sdp, candidate }) => {
         console.log("drone: sdp", sdp ? true : false);
@@ -99,18 +92,6 @@ const handleDrone = (sc: Socket, uin: UIN) => {
             }
         } else if (candidate) await pc.addIceCandidate(candidate);
     })
-
-    const datachannel = pc.createDataChannel("test", {
-        // ordered: true,
-        // negotiated: true,
-    })
-    datachannel.onopen = () => {
-        droneChannels.set(uin, datachannel);
-        datachannel.onmessage = ({ data }) => {
-            console.log("drone", datachannel.id, data);
-        };
-    }
-
 }
 
 io.on("connection", async (socket) => {

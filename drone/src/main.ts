@@ -1,6 +1,7 @@
 import client from "socket.io-client"
 
-// const connectButton = document.querySelector<HTMLButtonElement>("#connect")!;
+const connectButton = document.querySelector<HTMLButtonElement>("#connect")!;
+const video = document.querySelector<HTMLButtonElement>("#video")!;
 
 const sc = client("http://localhost:3000", {
   query: {
@@ -19,16 +20,6 @@ const pc = new RTCPeerConnection({
   ],
   iceCandidatePoolSize: 10
 });
-
-pc.ondatachannel = ({ channel }) => {
-  channel.onopen = () => {
-    let counter = 0;
-    const ringing = setInterval(() => channel.send(`hello! ${counter++}`), 1000)
-    channel.onclose = () => window.clearInterval(ringing);
-  }
-};
-
-
 
 pc.oniceconnectionstatechange = () => console.log(pc.iceConnectionState);
 pc.onicecandidate = ({ candidate }) => sc.emit("message", { candidate });
@@ -49,5 +40,6 @@ sc.on("message", async ({ sdp, candidate }) => {
   } else if (candidate) await pc.addIceCandidate(candidate);
 })
 
-
-
+connectButton.onclick = async () => {
+  const stream;
+}
