@@ -1,7 +1,7 @@
 import client from "socket.io-client"
 
 const connectButton = document.querySelector<HTMLButtonElement>("#connect")!;
-const video = document.querySelector<HTMLButtonElement>("#video")!;
+const video = document.querySelector<HTMLVideoElement>("#video")!;
 
 const sc = client("http://localhost:3000", {
   query: {
@@ -12,11 +12,11 @@ const sc = client("http://localhost:3000", {
 
 const pc = new RTCPeerConnection({
   iceServers: [
-      {
-          urls: ["turn:0.0.0.0.3478"],
-          username: "sanndy",
-          credential: "manndy"
-      }
+    {
+      urls: ["turn:localhost:5450"],
+      username: "sanndy",
+      credential: "manndy"
+    }
   ],
   iceCandidatePoolSize: 10
 });
@@ -29,8 +29,10 @@ pc.onnegotiationneeded = async () => {
 }
 
 sc.on("message", async ({ sdp, candidate }) => {
+  console.group("payload");
   console.log("sdp", sdp ? true : false);
   console.log("candidate", candidate ? true : false);
+  console.groupEnd();
   if (sdp) {
     await pc.setRemoteDescription(sdp);
     if (sdp.type == "offer") {
@@ -41,5 +43,8 @@ sc.on("message", async ({ sdp, candidate }) => {
 })
 
 connectButton.onclick = async () => {
-  const stream;
+  const stream = await navigator.mediaDevices.getUserMedia({ "video": true, "audio": true });
+  video.srcObject = stream;
+  stream.getTracks().forEach(track => pc.addTrack(track, stream));
 }
+

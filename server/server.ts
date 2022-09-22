@@ -4,6 +4,8 @@ import { RTCPeerConnection } from "wrtc";
 
 type UIN = string;
 
+const BossStream = new MediaStream();
+
 // const app: Application = express();
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -18,25 +20,19 @@ type Query = {
     uin: UIN
 }
 
-let droneChannels = new Map<UIN, readonly MediaStream[]>();
+let droneChannels = new Map<UIN, MediaStream>();
 
 const handleClient = (sc: Socket, uin: UIN) => {
     const pc = new RTCPeerConnection({
         iceServers: [
             {
-                urls: ["turn:0.0.0.0.3478"],
+                urls: ["turn:localhost:5450"],
                 username: "sanndy",
                 credential: "manndy"
             }
         ],
         iceCandidatePoolSize: 10
     });
-
-    const droneChannel = droneChannels.get(uin);
-
-    if (droneChannel) {
-        droneChannel.forEach(track => track.getTracks().forEach(track => pc.addTrack(track, ...droneChannel)))
-    }
 
     pc.oniceconnectionstatechange = () => console.log("client", pc.iceConnectionState);
     pc.onicecandidate = ({ candidate }) => sc.emit("message", { candidate });
@@ -57,12 +53,13 @@ const handleClient = (sc: Socket, uin: UIN) => {
         } else if (candidate) await pc.addIceCandidate(candidate);
     })
 
+    BossStream.getTracks()
 }
 const handleDrone = (sc: Socket, uin: UIN) => {
     const pc = new RTCPeerConnection({
         iceServers: [
             {
-                urls: ["turn:0.0.0.0.3478"],
+                urls: ["turn:localhost:5450"],
                 username: "sanndy",
                 credential: "manndy"
             }
@@ -70,7 +67,11 @@ const handleDrone = (sc: Socket, uin: UIN) => {
         iceCandidatePoolSize: 10
     });
 
-    pc.oniceconnectionstatechange = () => console.log("drone", pc.iceConnectionState);
+    pc.oniceconnectionstatechange = () => {
+        console.log("drone", pc.iceConnectionState);
+        if (pc.iceConnectionState == "failed")
+            droneChannels.delete(uin);
+    };
     pc.onicecandidate = ({ candidate }) => sc.emit("message", { candidate });
     pc.onnegotiationneeded = async () => {
         await pc.setLocalDescription(await pc.createOffer());
@@ -78,7 +79,7 @@ const handleDrone = (sc: Socket, uin: UIN) => {
     }
 
     pc.ontrack = ({streams}) => {
-        droneChannels.set(uin, streams);
+        const [remoteStream] = streams;
     }
 
     sc.on("message", async ({ sdp, candidate }) => {
@@ -92,12 +93,14 @@ const handleDrone = (sc: Socket, uin: UIN) => {
             }
         } else if (candidate) await pc.addIceCandidate(candidate);
     })
+
 }
 
 io.on("connection", async (socket) => {
     try {
         const query = socket.handshake.query as Query;
         console.log(query.type, query.uin);
+        // socket.on("message", payload => socket.broadcast.emit("message", payload));
         switch (query.type) {
             case "MavClient": await handleClient(socket, query.uin); break;
             case "MavDrone": await handleDrone(socket, query.uin); break;
