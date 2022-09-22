@@ -1,56 +1,53 @@
 import client from "socket.io-client"
-// import Cert from "./certificate";
 
-const icegatheringstatechange = document.querySelector<HTMLParagraphElement>("#icegatheringstatechange")!;
-const iceconnectionstatechange = document.querySelector<HTMLParagraphElement>("#iceconnectionstatechange")!;
-const signalingstatechange = document.querySelector<HTMLParagraphElement>("#signalingstatechange")!;
-const status = document.querySelector<HTMLParagraphElement>("#status")!;
-const video = document.querySelector<HTMLVideoElement>("#video")!;
+// const connectButton = document.querySelector<HTMLButtonElement>("#connect")!;
 
-const socketDrone = client("http://localhost:3000", {
+const sc = client("http://localhost:3000", {
   query: {
     uin: "BOB",
     type: "MavDrone"
   }
 });
 
-const peerDrone = new RTCPeerConnection({
+const pc = new RTCPeerConnection({
   iceServers: [
-    {
-      urls: "turn:0.0.0.0:3478",
-      username: "sanndy",
-      credential: "manndy"
-    }
-  ]
+      {
+          urls: ["turn:0.0.0.0.3478"],
+          username: "sanndy",
+          credential: "manndy"
+      }
+  ],
+  iceCandidatePoolSize: 10
 });
 
-const dataChannel = peerDrone.createDataChannel("talk");
-dataChannel.addEventListener("open", () => {
-  console.log("data channel open!");
-});
+pc.ondatachannel = ({ channel }) => {
+  channel.onopen = () => {
+    let counter = 0;
+    const ringing = setInterval(() => channel.send(`hello! ${counter++}`), 1000)
+    channel.onclose = () => window.clearInterval(ringing);
+  }
+};
 
-peerDrone.addEventListener("icegatheringstatechange", function () { icegatheringstatechange.textContent = this.iceGatheringState });
-peerDrone.addEventListener("iceconnectionstatechange", function () { iceconnectionstatechange.textContent = this.iceConnectionState });
-peerDrone.addEventListener("signalingstatechange", function () { signalingstatechange.textContent = this.signalingState });
 
-socketDrone.on("START_STREAM", async (payload) => {
-  status.textContent = "DRONE: got OFFER from SERVER";
-  console.log(payload);
-  const localStream = await playVideoFromCamera();
-  localStream.getTracks().forEach(track => {
-    peerDrone.addTrack(track, localStream);
-  });
-  const remoteOffer = new RTCSessionDescription(payload.offer);
-  await peerDrone.setRemoteDescription(remoteOffer);
-  const answer = await peerDrone.createAnswer();
-  await peerDrone.setLocalDescription(answer);
-  socketDrone.emit("ANSWER", { answer: answer });
-  status.textContent = "DRONE: Sent ANSWER to SERVER";
-});
 
-async function playVideoFromCamera() {
-  const constraints = { 'video': true, 'audio': true };
-  const stream = await navigator.mediaDevices.getUserMedia(constraints);
-  video.srcObject = stream;
-  return stream;
+pc.oniceconnectionstatechange = () => console.log(pc.iceConnectionState);
+pc.onicecandidate = ({ candidate }) => sc.emit("message", { candidate });
+pc.onnegotiationneeded = async () => {
+  await pc.setLocalDescription(await pc.createOffer());
+  sc.emit("message", { sdp: pc.localDescription });
 }
+
+sc.on("message", async ({ sdp, candidate }) => {
+  console.log("sdp", sdp ? true : false);
+  console.log("candidate", candidate ? true : false);
+  if (sdp) {
+    await pc.setRemoteDescription(sdp);
+    if (sdp.type == "offer") {
+      await pc.setLocalDescription(await pc.createAnswer());
+      sc.emit("message", { sdp: pc.localDescription });
+    }
+  } else if (candidate) await pc.addIceCandidate(candidate);
+})
+
+
+

@@ -2,14 +2,10 @@
 // import wrtc from "wrtc";
 import { Server, Socket } from "socket.io";
 import { createServer } from "http";
-import { RTCSessionDescription } from "wrtc";
+import { RTCSessionDescriptionInit, RTCIceCandidateInit, RTCPeerConnection } from "wrtc";
+import { randomUUID } from "crypto";
 
 type UIN = string;
-type Pair = {
-    drone: Socket | undefined,
-    client: Socket | undefined
-}
-const Pairing = new Map<UIN, Pair>();
 
 // const app: Application = express();
 const httpServer = createServer();
@@ -25,72 +21,111 @@ type Query = {
     uin: UIN
 }
 
-const SetupClient = (client: Socket, uin: UIN) => {
-    client.on("START_STREAM", payload => {
-        if (!payload?.offer) {
-            console.log("Client didn't send payload, aborting...");
-            return;
-        }
-        const offer = payload.offer as RTCSessionDescription;
-        // console.log(offer);
-        const pair = Pairing.get(uin);
-        if (!pair?.drone) {
-            console.log("Paired drone not found, aborting...");
-            return;
-        }
-        const drone = pair.drone;
-        drone.emit("START_STREAM", { offer });
-        console.log("Client: START_STREAM");
-    });
-}
+let droneChannels = new Map<UIN, RTCDataChannel>();
 
-const SetupDrone = (drone: Socket, uin: UIN) => {
-    drone.on("ANSWER", payload => {
-        if (!payload?.answer) {
-            console.log("Drone didn't send answer, aborting...");
-            return;
-        }
-        const answer = payload.answer as RTCSessionDescription;
-        // console.log(answer);
-        const pair = Pairing.get(uin);
-        if (!pair?.client) {
-            console.log("Paired client not found, aborting...");
-            return;
-        }
-        const client = pair.client;
-        client.emit("ANSWER", { answer });
-        console.log("Drone: ANSWER");
+const handleClient = (sc: Socket, uin: UIN) => {
+    const pc = new RTCPeerConnection({
+        iceServers: [
+            {
+                urls: ["turn:0.0.0.0.3478"],
+                username: "sanndy",
+                credential: "manndy"
+            }
+        ],
+        iceCandidatePoolSize: 10
     });
+
+    pc.ondatachannel = ({ channel }) => {
+        channel.onopen = () => {
+            const droneChannel = droneChannels.get(uin);
+            if (droneChannel) {
+                droneChannel.addEventListener("message", ({ data }) => channel.send(data));
+                droneChannel.addEventListener("close", () => channel.close());
+            }
+        }
+    };
+
+
+
+    pc.oniceconnectionstatechange = () => console.log("client", pc.iceConnectionState);
+    pc.onicecandidate = ({ candidate }) => sc.emit("message", { candidate });
+    pc.onnegotiationneeded = async () => {
+        await pc.setLocalDescription(await pc.createOffer());
+        sc.emit("message", { sdp: pc.localDescription });
+    }
+
+    sc.on("message", async ({ sdp, candidate }) => {
+        console.log("client: sdp", sdp ? true : false);
+        console.log("client: candidate", candidate ? true : false);
+        if (sdp) {
+            await pc.setRemoteDescription(sdp);
+            if (sdp.type == "offer") {
+                await pc.setLocalDescription(await pc.createAnswer());
+                sc.emit("message", { sdp: pc.localDescription });
+            }
+        } else if (candidate) await pc.addIceCandidate(candidate);
+    })
+
+}
+const handleDrone = (sc: Socket, uin: UIN) => {
+    const pc = new RTCPeerConnection({
+        iceServers: [
+            {
+                urls: ["turn:0.0.0.0.3478"],
+                username: "sanndy",
+                credential: "manndy"
+            }
+        ],
+        iceCandidatePoolSize: 10
+    });
+
+    pc.oniceconnectionstatechange = () => console.log("drone", pc.iceConnectionState);
+    pc.onicecandidate = ({ candidate }) => sc.emit("message", { candidate });
+    pc.onnegotiationneeded = async () => {
+        await pc.setLocalDescription(await pc.createOffer());
+        sc.emit("message", { sdp: pc.localDescription });
+    }
+
+
+
+    sc.on("message", async ({ sdp, candidate }) => {
+        console.log("drone: sdp", sdp ? true : false);
+        console.log("drone: candidate", candidate ? true : false);
+        if (sdp) {
+            await pc.setRemoteDescription(sdp);
+            if (sdp.type == "offer") {
+                await pc.setLocalDescription(await pc.createAnswer());
+                sc.emit("message", { sdp: pc.localDescription });
+            }
+        } else if (candidate) await pc.addIceCandidate(candidate);
+    })
+
+    const datachannel = pc.createDataChannel("test", {
+        // ordered: true,
+        // negotiated: true,
+    })
+    datachannel.onopen = () => {
+        droneChannels.set(uin, datachannel);
+        datachannel.onmessage = ({ data }) => {
+            console.log("drone", datachannel.id, data);
+        };
+    }
+
 }
 
 io.on("connection", async (socket) => {
-    const query = socket.handshake.query as Query;
-    await socket.join(query.uin);
-    socket.on("ANSWER", payload => socket.broadcast.emit("ANSWER", payload));
-    socket.on("START_STREAM", payload => socket.broadcast.emit("START_STREAM", payload));
-    // console.log(query);
-    // switch (query.type) {
-    //     case "MavClient": {
-    //         const pair = Pairing.get(query.uin);
-    //         if (!pair) {
-    //             Pairing.set(query.uin, { client: socket, drone: undefined });
-    //         } else {
-    //             pair.client = socket;
-    //         }
-    //         SetupClient(socket, query.uin);
-    //         console.log(pair?.client?.handshake.query, pair?.drone?.handshake.query);
-    //     }
-    //     case "MavDrone": {
-    //         const pair = Pairing.get(query.uin);
-    //         if (!pair) {
-    //             Pairing.set(query.uin, { drone: socket, client: undefined });
-    //         } else {
-    //             pair.drone = socket;
-    //         }
-    //         SetupDrone(socket, query.uin);
-    //     }
-    // }
+    try {
+        const query = socket.handshake.query as Query;
+        console.log(query.type, query.uin);
+        switch (query.type) {
+            case "MavClient": await handleClient(socket, query.uin); break;
+            case "MavDrone": await handleDrone(socket, query.uin); break;
+        }
+    } catch (error) {
+        console.error(error)
+    }
+
 });
 
 
-httpServer.listen(3000, "0.0.0.0");
+httpServer.listen(3000, "0.0.0.0", () => console.log("Server running on port 3000"));
