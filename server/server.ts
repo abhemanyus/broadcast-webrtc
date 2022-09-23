@@ -4,8 +4,6 @@ import { RTCPeerConnection } from "wrtc";
 
 type UIN = string;
 
-const BossStream = new MediaStream();
-
 // const app: Application = express();
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -20,42 +18,11 @@ type Query = {
     uin: UIN
 }
 
-let droneChannels = new Map<UIN, MediaStream>();
+const droneStreams = new Map<UIN, MediaStream>();
 
-const handleClient = (sc: Socket, uin: UIN) => {
-    const pc = new RTCPeerConnection({
-        iceServers: [
-            {
-                urls: ["turn:localhost:5450"],
-                username: "sanndy",
-                credential: "manndy"
-            }
-        ],
-        iceCandidatePoolSize: 10
-    });
+const polite = false;
 
-    pc.oniceconnectionstatechange = () => console.log("client", pc.iceConnectionState);
-    pc.onicecandidate = ({ candidate }) => sc.emit("message", { candidate });
-    pc.onnegotiationneeded = async () => {
-        await pc.setLocalDescription(await pc.createOffer());
-        sc.emit("message", { sdp: pc.localDescription });
-    }
-
-    sc.on("message", async ({ sdp, candidate }) => {
-        console.log("client: sdp", sdp ? true : false);
-        console.log("client: candidate", candidate ? true : false);
-        if (sdp) {
-            await pc.setRemoteDescription(sdp);
-            if (sdp.type == "offer") {
-                await pc.setLocalDescription(await pc.createAnswer());
-                sc.emit("message", { sdp: pc.localDescription });
-            }
-        } else if (candidate) await pc.addIceCandidate(candidate);
-    })
-
-    BossStream.getTracks()
-}
-const handleDrone = (sc: Socket, uin: UIN) => {
+const connect = (sc: Socket) => {
     const pc = new RTCPeerConnection({
         iceServers: [
             {
@@ -68,42 +35,79 @@ const handleDrone = (sc: Socket, uin: UIN) => {
     });
 
     pc.oniceconnectionstatechange = () => {
-        console.log("drone", pc.iceConnectionState);
-        if (pc.iceConnectionState == "failed")
-            droneChannels.delete(uin);
+        if (pc.iceConnectionState === "failed") {
+            pc.restartIce();
+        }
     };
     pc.onicecandidate = ({ candidate }) => sc.emit("message", { candidate });
+    let makingOffer = false;
     pc.onnegotiationneeded = async () => {
-        await pc.setLocalDescription(await pc.createOffer());
-        sc.emit("message", { sdp: pc.localDescription });
+        makingOffer = true;
+        try {
+            await pc.setLocalDescription(await pc.createOffer());
+            sc.emit("message", { sdp: pc.localDescription });
+        }
+        catch (err) {
+            console.error(err);
+        }
+        finally {
+            makingOffer = false;
+        }
     }
 
-    pc.ontrack = ({streams}) => {
-        const [remoteStream] = streams;
-    }
-
+    let ignoreOffer = false;
     sc.on("message", async ({ sdp, candidate }) => {
-        console.log("drone: sdp", sdp ? true : false);
-        console.log("drone: candidate", candidate ? true : false);
-        if (sdp) {
-            await pc.setRemoteDescription(sdp);
-            if (sdp.type == "offer") {
-                await pc.setLocalDescription(await pc.createAnswer());
-                sc.emit("message", { sdp: pc.localDescription });
-            }
-        } else if (candidate) await pc.addIceCandidate(candidate);
-    })
+        try {
+            if (sdp) {
+                const offerCollision = (sdp.type === "offer") &&
+                    (makingOffer || pc.signalingState !== "stable");
 
+                ignoreOffer = !polite && offerCollision;
+                if (ignoreOffer) {
+                    return;
+                }
+
+                await pc.setRemoteDescription(sdp);
+                if (sdp.type === "offer") {
+                    await pc.setLocalDescription(await pc.createAnswer());
+                    sc.emit("message", { sdp: pc.localDescription })
+                }
+            } else if (candidate) {
+                try {
+                    await pc.addIceCandidate(candidate);
+                } catch (err) {
+                    if (!ignoreOffer) {
+                        throw err;
+                    }
+                }
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    })
+    return pc;
 }
 
 io.on("connection", async (socket) => {
     try {
         const query = socket.handshake.query as Query;
         console.log(query.type, query.uin);
-        // socket.on("message", payload => socket.broadcast.emit("message", payload));
-        switch (query.type) {
-            case "MavClient": await handleClient(socket, query.uin); break;
-            case "MavDrone": await handleDrone(socket, query.uin); break;
+        if (query.type == "MavClient") {
+            socket.on("start", async () => {
+                const pc = await connect(socket);
+                const stream = droneStreams.get(query.uin);
+                if (stream) {
+                    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+                } 
+            })
+
+        } else if (query.type == "MavDrone") {
+            const pc = await connect(socket);
+            socket.emit("start");
+            pc.ontrack = ({streams}) => {
+                const [remoteStream] = streams;
+                droneStreams.set(query.uin, remoteStream);
+            }
         }
     } catch (error) {
         console.error(error)
