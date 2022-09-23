@@ -27,8 +27,8 @@ const connect = (sc: Socket) => {
         iceServers: [
             {
                 urls: ["turn:localhost:5450"],
-                username: "sanndy",
-                credential: "manndy"
+                username: "test",
+                credential: "test"
             }
         ],
         iceCandidatePoolSize: 10
