@@ -30,13 +30,13 @@ const connect = () => {
       pc.restartIce();
     }
   };
-  pc.onicecandidate = ({ candidate }) => sc.emit("message", { candidate });
+  pc.onicecandidate = ({ candidate }) => sc.emit("holler", { candidate });
   let makingOffer = false;
   pc.onnegotiationneeded = async () => {
     makingOffer = true;
     try {
       await pc.setLocalDescription();
-      sc.emit("message", { sdp: pc.localDescription });
+      sc.emit("holler", { sdp: pc.localDescription });
     }
     catch (err) {
       console.error(err);
@@ -47,7 +47,7 @@ const connect = () => {
   }
 
   let ignoreOffer = false;
-  sc.on("message", async ({ sdp, candidate }) => {
+  sc.on("holler", async ({ sdp, candidate }) => {
     try {
       if (sdp) {
         const offerCollision = (sdp.type === "offer") &&
@@ -61,7 +61,7 @@ const connect = () => {
         await pc.setRemoteDescription(sdp);
         if (sdp.type === "offer") {
           await pc.setLocalDescription();
-          sc.emit("message", { sdp: pc.localDescription })
+          sc.emit("holler", { sdp: pc.localDescription })
         }
       } else if (candidate) {
         try {
@@ -81,7 +81,7 @@ const connect = () => {
 
 
 
-sc.on("start", async () => {
+sc.on("begin", async () => {
   video.srcObject = null;
   const pc = await connect();
   const stream = await navigator.mediaDevices.getUserMedia({ "video": true, "audio": true });
