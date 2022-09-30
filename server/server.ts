@@ -109,14 +109,14 @@ io.on("connection", async (socket) => {
       if (query.type == "MavClient") {
         socket.on("begin", async () => {
           console.log("client: start");
-          const pc = await connect(socket);
+          const pc = connect(socket);
           const stream = droneStreams.get(query.uin);
           if (stream) {
             stream.getTracks().forEach((track) => pc.addTrack(track, stream));
           }
         });
       } else if (query.type == "MavDrone") {
-        const pc = await connect(socket);
+        const pc = connect(socket);
         socket.emit("begin", { hello: "world" });
         console.log("drone: start");
         pc.ontrack = ({ streams }) => {
