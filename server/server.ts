@@ -104,30 +104,30 @@ io.on("connection", async (socket) => {
   const query = socket.handshake.query as Query;
   console.log(query.type, query.uin);
   // socket.on("begin", payload => socket.broadcast.emit("begin", payload));
-  // socket.on("holler", (payload) => socket.broadcast.emit("holler", payload));
-    try {
-      if (query.type == "MavClient") {
-        socket.on("begin", async () => {
-          console.log("client: start");
-          const pc = connect(socket);
-          const stream = droneStreams.get(query.uin);
-          if (stream) {
-            stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-          }
-        });
-      } else if (query.type == "MavDrone") {
-        const pc = connect(socket);
-        socket.emit("begin", { hello: "world" });
-        console.log("drone: start");
-        pc.ontrack = ({ streams }) => {
-          console.log("drone track");
-          const [remoteStream] = streams;
-          droneStreams.set(query.uin, remoteStream);
-        };
-      }
-    } catch (error) {
-      console.error(error);
-    }
+  socket.on("message", (payload) => socket.broadcast.emit("message", payload));
+    // try {
+    //   if (query.type == "MavClient") {
+    //     socket.on("begin", async () => {
+    //       console.log("client: start");
+    //       const pc = connect(socket);
+    //       const stream = droneStreams.get(query.uin);
+    //       if (stream) {
+    //         stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    //       }
+    //     });
+    //   } else if (query.type == "MavDrone") {
+    //     const pc = connect(socket);
+    //     socket.emit("begin", { hello: "world" });
+    //     console.log("drone: start");
+    //     pc.ontrack = ({ streams }) => {
+    //       console.log("drone track");
+    //       const [remoteStream] = streams;
+    //       droneStreams.set(query.uin, remoteStream);
+    //     };
+    //   }
+    // } catch (error) {
+    //   console.error(error);
+    // }
 });
 
 httpServer.listen(3000, "0.0.0.0", () =>
